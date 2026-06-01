@@ -4,9 +4,8 @@ node_modules/
 # Build output
 dist/
 
-# Generated dashboard data — contains real player/guild data.
-# Use data.example.js as the committed placeholder instead.
-public-app/data.js
+# NOTE: docs/data.js is intentionally committed — it is the dataset served by
+# the public GitHub Pages site (contains real, but publicly-shared, guild data).
 
 # IDE / editor state
 .idea/
