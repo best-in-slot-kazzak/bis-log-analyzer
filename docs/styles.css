@@ -245,7 +245,53 @@ body {
   font-weight: 500;
   margin-bottom: 10px;
 }
-.chart-container.chart-phase { height: 260px; }
+.chart-container.chart-phase { height: 320px; }
+
+/* ── Phase trend (per-report sparklines) ── */
+.tp-trend { margin-top: 16px; }
+.tp-trend-caption {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.tp-trend-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.tp-trend-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  cursor: default;
+}
+.tp-trend-label {
+  font-size: 14px;
+  font-weight: 700;
+  min-width: 24px;
+}
+.tp-spark {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 50px;
+  height: 38px;
+}
+.tp-trend-delta {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tp-trend-delta.up,
+.tp-trend-delta.down { color: var(--text); }
+.tp-trend-delta.flat { color: var(--text-muted); }
 
 /* ── Wipe Reasons ───────────────────────── */
 .wr-layout { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; }
