@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Generated dashboard data — contains real player/guild data.
+# Use data.example.js as the committed placeholder instead.
+public-app/data.js
+
+# IDE / editor state
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local Claude settings (machine-specific paths & permissions)
+.claude/settings.local.json

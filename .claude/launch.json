@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "cwd": "admin-app",
+      "port": 5173
+    },
+    {
+      "name": "public-app",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4175"],
+      "cwd": "public-app",
+      "port": 4175
+    }
+  ]
+}
