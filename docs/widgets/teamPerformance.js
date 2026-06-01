@@ -194,7 +194,7 @@ function renderPhaseTrend(container, reports, phases, labels, colors) {
   });
 
   container.innerHTML = `
-    <div class="tp-trend-caption">Trend across ${reports.length} reports · oldest → newest</div>
+    <div class="tp-trend-caption">Ruthi stonks across ${reports.length} reports · oldest → newest</div>
     <div class="tp-trend-row">${chips.join("")}</div>`;
 }
 
