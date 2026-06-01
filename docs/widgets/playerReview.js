@@ -159,7 +159,7 @@ function fillCompBody(bodyEl, rows, metric, selectedId, normalize) {
     bodyEl.innerHTML = `<p class="no-data">${metric === "deaths" ? "No early deaths recorded." : "No damage recorded."}</p>`;
     return null;
   }
-  const h = Math.max(64, rows.length * 22 + 26);
+  const h = Math.max(82, rows.length * 22 + 43);
   bodyEl.innerHTML = `<div class="chart-container comp-chart-wrap" style="height:${h}px"><canvas></canvas></div>`;
   return renderCompChart(bodyEl.querySelector("canvas"), rows, metric, selectedId, normalize);
 }
@@ -387,8 +387,47 @@ function renderCompChart(canvas, rows, metric, selectedId, normalize) {
   const bg = rows.map((r) => getPlayerColor(r.player) + "99");
   const border = rows.map((r) => getPlayerColor(r.player));
 
+  // Dashed reference line at the team average, so it's obvious who sits
+  // above / below the mean for this ability.
+  const avg = rows.length ? rows.reduce((s, r) => s + r.value, 0) / rows.length : 0;
+  const avgLinePlugin = {
+    id: "avgLine",
+    // Line goes behind the bars so it doesn't appear to cut through them —
+    // it's only visible in the empty area past each bar.
+    beforeDatasetsDraw(chart) {
+      if (!rows.length) return;
+      const x = chart.scales.x.getPixelForValue(avg);
+      const { top, bottom } = chart.chartArea;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#8b949e";
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+      ctx.restore();
+    },
+    // Label drawn in the top padding gap, just above the first bar.
+    afterDatasetsDraw(chart) {
+      if (!rows.length) return;
+      const x = chart.scales.x.getPixelForValue(avg);
+      const { top } = chart.chartArea;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = "600 12px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillStyle = "#8b949e";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText("Ø", x, top - 2);
+      ctx.restore();
+    }
+  };
+
   return new Chart(canvas, {
     type: "bar",
+    plugins: [avgLinePlugin],
     data: {
       labels: rows.map((r) => r.player.name),
       datasets: [{
@@ -407,6 +446,7 @@ function renderCompChart(canvas, rows, metric, selectedId, normalize) {
       indexAxis: "y",
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 17 } }, // room above the first bar for the Ø label
       plugins: {
         legend: { display: false },
         tooltip: {
