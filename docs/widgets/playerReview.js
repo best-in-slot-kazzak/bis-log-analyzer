@@ -12,7 +12,9 @@ export function renderPlayerReview(container, boss, players) {
   const tankIds = new Set(boss.playerReviewConfig?.tanks || []);
   const pulls = allPulls(boss).sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
 
-  const compData = buildComparisonData(pulls, raiders, bossAbilities);
+  // Per-ability aggregates across ALL raiders: damage taken, hits and early
+  // deaths (deaths that occurred among the first 5 deaths of a pull).
+  const { perAbility, presentPulls } = buildComparisonData(pulls, raiders, bossAbilities);
 
   container.innerHTML = `
     <div class="pr-header">
@@ -28,13 +30,16 @@ export function renderPlayerReview(container, boss, players) {
 
     ${bossAbilities.length ? `
     <section class="pr-section pr-comparison">
-      <h4>Player Comparison — Tracked Abilities</h4>
+      <div class="pr-comp-header">
+        <h4>Player Comparison — Tracked Abilities</h4>
+        <div class="seg" id="pr-norm-seg" role="group" aria-label="Normalization">
+          <button type="button" class="seg-btn active" data-norm="total">Total</button>
+          <button type="button" class="seg-btn" data-norm="perpull">Ø / pull</button>
+        </div>
+      </div>
       <div class="comp-grid">
         ${bossAbilities.map((a) => {
-          const allData = compData[a.id] || [];
-          const noTankData = allData.filter((d) => !tankIds.has(d.player.id));
-          const initData = noTankData.length ? noTankData : allData;
-          const chartH = Math.max(120, initData.length * 30 + 40);
+          const allData = perAbility[a.id] || [];
           const hasTanks = allData.some((d) => tankIds.has(d.player.id));
           return `
           <div class="comp-ability">
@@ -45,9 +50,14 @@ export function renderPlayerReview(container, boss, players) {
                 Show Tanks
               </label>` : ""}
             </div>
-            ${allData.length
-              ? `<div class="chart-container comp-chart-wrap" id="pr-cmp-wrap-${a.id}" style="height:${chartH}px"><canvas id="pr-cmp-${a.id}"></canvas></div>`
-              : `<p class="no-data">No data for this ability.</p>`}
+            <div class="comp-sub">
+              <div class="comp-sub-title">Damage taken</div>
+              <div class="comp-sub-body" id="pr-cmp-dmg-${a.id}"></div>
+            </div>
+            <div class="comp-sub">
+              <div class="comp-sub-title">Deaths</div>
+              <div class="comp-sub-body" id="pr-cmp-deaths-${a.id}"></div>
+            </div>
           </div>`;
         }).join("")}
       </div>
@@ -57,50 +67,101 @@ export function renderPlayerReview(container, boss, players) {
   const select = container.querySelector("#pr-player-select");
   const content = container.querySelector("#pr-player-content");
 
+  // Shared comparison state.
+  let selectedId = raiders[0].id;
+  let normalize = false;
+  const showTanks = {}; // ability.id -> bool
+  const registry = {};  // ability.id -> { dmg, deaths } chart instances
+
+  const denom = (playerId) => Math.max(1, presentPulls.get(playerId) || 0);
+
+  function buildRows(entries, metric) {
+    return entries
+      .map((e) => {
+        const pp = denom(e.player.id);
+        const base = metric === "deaths" ? e.deaths : e.dmgTotal;
+        return {
+          player: e.player,
+          dmgTotal: e.dmgTotal,
+          hits: e.hits,
+          deaths: e.deaths,
+          presentPulls: pp,
+          value: normalize ? base / pp : base
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+  }
+
+  function drawAbility(ability) {
+    const entries = perAbility[ability.id] || [];
+    // Tank filtering: hidden by default, unless every non-tank has no data.
+    const nonTank = entries.filter((e) => !tankIds.has(e.player.id));
+    const useEntries = showTanks[ability.id]
+      ? entries
+      : (nonTank.length ? nonTank : entries);
+
+    const dmgRows   = buildRows(useEntries, "dmg");
+    const deathRows = buildRows(useEntries, "deaths");
+
+    const reg = registry[ability.id];
+    if (reg) { reg.dmg?.destroy(); reg.deaths?.destroy(); }
+
+    registry[ability.id] = {
+      dmg:    fillCompBody(container.querySelector(`#pr-cmp-dmg-${ability.id}`), dmgRows, "dmg", selectedId, normalize),
+      deaths: fillCompBody(container.querySelector(`#pr-cmp-deaths-${ability.id}`), deathRows, "deaths", selectedId, normalize)
+    };
+  }
+
+  function redrawComparison() {
+    for (const ability of bossAbilities) drawAbility(ability);
+  }
+
   function update(playerId) {
+    selectedId = playerId;
     const player = raiders.find((p) => p.id === playerId);
     if (player) renderPlayerContent(content, pulls, player, bossAbilities, raiders, boss);
+    redrawComparison(); // re-color bars to highlight the selected player
   }
 
   select.addEventListener("change", (e) => update(e.target.value));
-  update(raiders[0].id);
 
-  // Render comparison charts with tank filtering
+  // Normalization segmented control.
+  const seg = container.querySelector("#pr-norm-seg");
+  if (seg) {
+    seg.addEventListener("click", (e) => {
+      const btn = e.target.closest(".seg-btn");
+      if (!btn) return;
+      normalize = btn.dataset.norm === "perpull";
+      seg.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      redrawComparison();
+    });
+  }
+
+  // Per-ability "Show Tanks" toggles.
   for (const ability of bossAbilities) {
-    const allData = compData[ability.id] || [];
-    if (!allData.length) continue;
-
-    const noTankData = allData.filter((d) => !tankIds.has(d.player.id));
-    const canvas = container.querySelector(`#pr-cmp-${ability.id}`);
-    const wrap   = container.querySelector(`#pr-cmp-wrap-${ability.id}`);
-    if (!canvas || !wrap) continue;
-
-    const initData = noTankData.length ? noTankData : allData;
-    const chart = renderComparisonChart(canvas, initData, ability);
-
     const toggle = container.querySelector(`.tank-toggle[data-ability="${ability.id}"]`);
-    if (toggle && chart) {
+    if (toggle) {
       toggle.addEventListener("change", (e) => {
-        const data = e.target.checked ? allData : (noTankData.length ? noTankData : allData);
-        const h = Math.max(120, data.length * 30 + 40);
-
-        wrap.style.height = h + "px";
-        requestAnimationFrame(() => {
-          chart.data.labels = data.map((d) => d.player.name);
-          chart.data.datasets[0].data = data.map((d) => d.total);
-          chart.data.datasets[0].backgroundColor = data.map((d) => getPlayerColor(d.player) + "99");
-          chart.data.datasets[0].borderColor = data.map((d) => getPlayerColor(d.player));
-          // Keep tooltip in sync with new data
-          chart.options.plugins.tooltip.callbacks.label = (item) => {
-            const d = data[item.dataIndex];
-            return d ? `Total: ${formatNumber(d.total)}` : `Total: ${formatNumber(item.raw)}`;
-          };
-          chart.resize();
-          chart.update();
-        });
+        showTanks[ability.id] = e.target.checked;
+        drawAbility(ability);
       });
     }
   }
+
+  update(raiders[0].id);
+}
+
+// Fill a comparison sub-chart body with a horizontal bar chart (or a hint when
+// there's no data). Returns the Chart instance (or null).
+function fillCompBody(bodyEl, rows, metric, selectedId, normalize) {
+  if (!bodyEl) return null;
+  if (!rows.length) {
+    bodyEl.innerHTML = `<p class="no-data">${metric === "deaths" ? "No early deaths recorded." : "No damage recorded."}</p>`;
+    return null;
+  }
+  const h = Math.max(64, rows.length * 22 + 26);
+  bodyEl.innerHTML = `<div class="chart-container comp-chart-wrap" style="height:${h}px"><canvas></canvas></div>`;
+  return renderCompChart(bodyEl.querySelector("canvas"), rows, metric, selectedId, normalize);
 }
 
 // ── Per-player content ───────────────────────────────────────────────────────
@@ -318,18 +379,28 @@ function renderDmgChart(canvas, data, playerColor) {
   });
 }
 
-function renderComparisonChart(canvas, playerData, ability) {
+function renderCompChart(canvas, rows, metric, selectedId, normalize) {
+  const isDeaths = metric === "deaths";
+
+  // Highlight the selected player without dimming the rest: full-colour bars,
+  // and a bold + italic accent axis label (handled in the y-scale ticks below).
+  const bg = rows.map((r) => getPlayerColor(r.player) + "99");
+  const border = rows.map((r) => getPlayerColor(r.player));
+
   return new Chart(canvas, {
     type: "bar",
     data: {
-      labels: playerData.map((d) => d.player.name),
+      labels: rows.map((r) => r.player.name),
       datasets: [{
-        label: "Total damage taken",
-        data: playerData.map((d) => d.total),
-        backgroundColor: playerData.map((d) => getPlayerColor(d.player) + "99"),
-        borderColor: playerData.map((d) => getPlayerColor(d.player)),
+        data: rows.map((r) => r.value),
+        backgroundColor: bg,
+        borderColor: border,
         borderWidth: 1,
-        borderRadius: 3
+        borderRadius: 3,
+        // Keep the bar colour identical on hover — the tooltip is enough.
+        hoverBackgroundColor: bg,
+        hoverBorderColor: border,
+        hoverBorderWidth: 1
       }]
     },
     options: {
@@ -341,15 +412,46 @@ function renderComparisonChart(canvas, playerData, ability) {
         tooltip: {
           callbacks: {
             label: (item) => {
-              const d = playerData[item.dataIndex];
-              return `Total: ${formatNumber(d.total)}`;
+              const r = rows[item.dataIndex];
+              if (isDeaths) {
+                return [
+                  `Deaths: ${r.deaths}`,
+                  `Ø/pull: ${(r.deaths / r.presentPulls).toFixed(2)}`,
+                  `Pulls present: ${r.presentPulls}`
+                ];
+              }
+              return [
+                `Total: ${formatNumber(r.dmgTotal)}`,
+                `Hits: ${r.hits}`,
+                `Ø/pull: ${formatNumber(Math.round(r.dmgTotal / r.presentPulls))}`,
+                `Pulls present: ${r.presentPulls}`
+              ];
             }
           }
         }
       },
       scales: {
-        x: { ticks: { color: "#7d8590", callback: (v) => formatNumber(v) }, grid: { color: "#21262d" } },
-        y: { ticks: { color: "#e6edf3", font: { size: 11 } }, grid: { color: "#21262d" } }
+        x: {
+          ticks: {
+            color: "#7d8590",
+            font: { size: 10 },
+            stepSize: isDeaths && !normalize ? 1 : undefined,
+            precision: isDeaths && !normalize ? 0 : undefined,
+            callback: (v) => isDeaths ? v : formatNumber(v)
+          },
+          grid: { color: "#21262d" }
+        },
+        y: {
+          ticks: {
+            padding: 6,
+            color: (ctx) => rows[ctx.index]?.player.id === selectedId ? "#58a6ff" : "#e6edf3",
+            font: (ctx) => {
+              const sel = rows[ctx.index]?.player.id === selectedId;
+              return { size: 10, weight: sel ? "700" : "400", style: sel ? "italic" : "normal" };
+            }
+          },
+          grid: { color: "#21262d", tickLength: 0 }
+        }
       }
     }
   });
@@ -358,28 +460,57 @@ function renderComparisonChart(canvas, playerData, ability) {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildComparisonData(pulls, raiders, bossAbilities) {
-  const result = {};
-  for (const ability of bossAbilities) {
-    const keyId = ability.abilityId != null ? String(ability.abilityId) : null;
-    const keyName = ability.label?.toLowerCase();
-
-    const byPlayer = [];
-    for (const player of raiders) {
-      let total = 0, hits = 0;
-      for (const pull of pulls) {
-        for (const dt of pull.damageTaken || []) {
-          if (dt.playerId !== player.id) continue;
-          if ((keyId && String(dt.abilityId) === keyId) || (keyName && dt.abilityName?.toLowerCase() === keyName)) {
-            total += dt.total || 0;
-            hits += dt.hits || 0;
-          }
-        }
-      }
-      byPlayer.push({ player, total, hits });
-    }
-    result[ability.id] = byPlayer.sort((a, b) => b.total - a.total);
+  const raiderIds = new Set(raiders.map((p) => p.id));
+  // ability.id -> Map(playerId -> { player, dmgTotal, hits, deaths })
+  const perAbilityMap = {};
+  for (const a of bossAbilities) {
+    perAbilityMap[a.id] = new Map(raiders.map((p) => [p.id, { player: p, dmgTotal: 0, hits: 0, deaths: 0 }]));
   }
-  return result;
+  const presentPulls = new Map(raiders.map((p) => [p.id, 0]));
+
+  const matchAbility = (abilityId, abilityName) => bossAbilities.find((a) =>
+    (a.abilityId != null && String(abilityId) === String(a.abilityId)) ||
+    (a.label && abilityName?.toLowerCase() === a.label.toLowerCase())
+  );
+
+  for (const pull of pulls) {
+    // Presence (denominator for per-pull normalization). Empty participants
+    // list = unknown → treat everyone as present.
+    const participants = pull.participants?.length ? pull.participants : null;
+    for (const p of raiders) {
+      if (!participants || participants.includes(p.id)) {
+        presentPulls.set(p.id, presentPulls.get(p.id) + 1);
+      }
+    }
+
+    // Damage taken from tracked abilities.
+    for (const dt of pull.damageTaken || []) {
+      if (!raiderIds.has(dt.playerId)) continue;
+      const matched = matchAbility(dt.abilityId, dt.abilityName);
+      if (!matched) continue;
+      const e = perAbilityMap[matched.id].get(dt.playerId);
+      if (!e) continue;
+      e.dmgTotal += dt.total || 0;
+      e.hits += dt.hits || 0;
+    }
+
+    // Deaths: only the first 5 of the fight (sorted by time), same gating as
+    // the per-player deaths chart.
+    const first5 = [...(pull.deaths || [])]
+      .sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity))
+      .slice(0, 5);
+    for (const death of first5) {
+      if (!raiderIds.has(death.playerId)) continue;
+      const matched = matchAbility(death.abilityId, death.abilityName);
+      if (!matched) continue;
+      const e = perAbilityMap[matched.id].get(death.playerId);
+      if (e) e.deaths += 1;
+    }
+  }
+
+  const perAbility = {};
+  for (const a of bossAbilities) perAbility[a.id] = [...perAbilityMap[a.id].values()];
+  return { perAbility, presentPulls };
 }
 
 function getPotState(p, potionWindows) {
