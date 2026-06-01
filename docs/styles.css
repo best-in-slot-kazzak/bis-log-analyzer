@@ -614,6 +614,32 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .tl-single-meta { color: var(--text-muted); font-size: 12px; }
 .tl-empty-msg { font-size: 12px; color: var(--text-muted); }
 
+/* ── Mobile timeline ────────────────────────────── */
+/* On narrow screens the per-marker date labels overlap, so we hide them and
+   stack the layout. The range summary updates live while dragging, so it
+   stays the single source of truth for the selected dates. */
+@media (max-width: 640px) {
+  .tl-wrap {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .tl-marker-label { display: none; }
+  .tl-summary {
+    text-align: left;
+    min-width: 0;
+    white-space: normal;
+    margin-top: 0;
+    font-size: 13px;
+  }
+  /* Bigger touch targets for the drag handles on touch screens */
+  .tl-handle {
+    width: 26px;
+    height: 26px;
+    top: -1px;
+  }
+}
+
 /* ── Animated background ─────────────────────────────────────────────────── */
 #bg-canvas { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {

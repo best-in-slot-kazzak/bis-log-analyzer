@@ -75,8 +75,15 @@ export function renderTimeline(container, boss, onRangeChange) {
       handleR.style.zIndex = 4;
     }
 
-    const sel   = reports.slice(leftIdx, rightIdx + 1);
-    const pulls = sel.reduce((s, r) => s + r.pulls.length, 0);
+    setSummary(leftIdx, rightIdx);
+  }
+
+  // Render the range summary for an arbitrary [l, r] selection. Called live
+  // during dragging so mobile users (where per-marker date labels are hidden)
+  // get immediate feedback on which date range they're selecting.
+  function setSummary(l, r) {
+    const sel   = reports.slice(l, r + 1);
+    const pulls = sel.reduce((s, rr) => s + rr.pulls.length, 0);
     const from  = formatDate(sel[0].startedAt);
     const to    = formatDate(sel[sel.length - 1].startedAt);
     const range = from === to ? from : `${from} – ${to}`;
@@ -121,11 +128,10 @@ export function renderTimeline(container, boss, onRangeChange) {
       } else {
         fill.style.width = (snapPct - pct(leftIdx)) + "%";
       }
-      markers.forEach((m, i) => {
-        const l = which === "left"  ? previewIdx : leftIdx;
-        const r = which === "right" ? previewIdx : rightIdx;
-        m.classList.toggle("active", i >= l && i <= r);
-      });
+      const l = which === "left"  ? previewIdx : leftIdx;
+      const r = which === "right" ? previewIdx : rightIdx;
+      markers.forEach((m, i) => m.classList.toggle("active", i >= l && i <= r));
+      setSummary(l, r); // live feedback while dragging (esp. for mobile)
     });
 
     handle.addEventListener("pointerup", (e) => { lastX = e.clientX; });
