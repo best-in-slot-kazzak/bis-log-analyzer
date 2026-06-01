@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BIS Raid Analysis">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#161b22"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Tile -->
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="url(#bg)" stroke="#30363d" stroke-width="2"/>
+
+  <!-- Ascending analysis bars (GitHub blue scale, light = newest/best) -->
+  <g>
+    <rect x="12" y="34" width="7" height="16" rx="2" fill="#1f6feb"/>
+    <rect x="23" y="26" width="7" height="24" rx="2" fill="#388bfd"/>
+    <rect x="34" y="18" width="7" height="32" rx="2" fill="#58a6ff"/>
+    <rect x="45" y="10" width="7" height="40" rx="2" fill="#79c0ff"/>
+  </g>
+
+  <!-- Upward trend line over the bars -->
+  <polyline points="15.5,33 26.5,25 37.5,17 48.5,9"
+            fill="none" stroke="#e6edf3" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+  <circle cx="48.5" cy="9" r="2.6" fill="#e6edf3"/>
+
+  <!-- Baseline -->
+  <rect x="11" y="50" width="42" height="2" rx="1" fill="#30363d"/>
+</svg>
