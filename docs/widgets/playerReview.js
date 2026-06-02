@@ -201,7 +201,11 @@ function renderPlayerContent(container, pulls, player, bossAbilities, raiders, b
       .sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity))
       .slice(0, 5);
 
-    const inPull = !pull.participants?.length || pull.participants.includes(playerId);
+    const hasParticipants = pull.participants?.length;
+    const inPull = !hasParticipants || pull.participants.includes(playerId);
+    // Tri-state presence for the deaths view: true / false / null (unknown,
+    // i.e. no participant list for this pull → inherit from neighbours later).
+    const presence = hasParticipants ? pull.participants.includes(playerId) : null;
 
     const pullDeaths = new Map();
     for (const death of first5) {
@@ -213,7 +217,7 @@ function renderPlayerContent(container, pulls, player, bossAbilities, raiders, b
       if (!matched) continue;
       pullDeaths.set(matched.id, (pullDeaths.get(matched.id) || 0) + 1);
     }
-    deathsByPull.push({ pullIndex: i + 1, deaths: pullDeaths, notPresent: !inPull });
+    deathsByPull.push({ pullIndex: i + 1, deaths: pullDeaths, present: presence });
 
     const pot = inPull ? (pull.potionUsage?.find((p) => p.playerId === playerId)) : null;
     potUsage.push({
@@ -225,6 +229,16 @@ function renderPlayerContent(container, pulls, player, bossAbilities, raiders, b
       notPresent: !inPull,
       duration: pull.duration || 0
     });
+  }
+
+  // Resolve unknown presence (pulls without a participant list) by inheriting
+  // the last known state. This bridges gaps so an absence range isn't split by
+  // 'unknown' pulls in the middle (e.g. present at #145, unknown #151 → absent).
+  let lastKnownPresent = true;
+  for (const d of deathsByPull) {
+    if (d.present === null) d.present = lastKnownPresent;
+    else lastKnownPresent = d.present;
+    d.notPresent = d.present === false;
   }
 
   const allDamage = [...damageTotals.values()].sort((a, b) => b.totalDamage - a.totalDamage);
@@ -311,8 +325,44 @@ function renderDeathsChart(canvas, deathsByPull, abilities) {
 
   const labels = deathsByPull.map((p) => `#${p.pullIndex}`);
 
+  // Grey out the contiguous pull ranges where the player wasn't in the raid:
+  // a full-height tint (behind the bars) plus a solid strip at the top.
+  // Bar centre positions come from the dataset meta so they stay correct even
+  // when the x-axis collapses labels via maxTicksLimit.
+  function drawAbsence(chart, color, topStrip) {
+    const n = deathsByPull.length;
+    if (!n) return;
+    const bars = chart.getDatasetMeta(0)?.data;
+    if (!bars || !bars.length) return;
+    const { top, bottom, left, right } = chart.chartArea;
+    const step = bars.length > 1 ? Math.abs(bars[1].x - bars[0].x) : (right - left);
+    const clamp = (v) => Math.max(left, Math.min(right, v));
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = color;
+    let i = 0;
+    while (i < n) {
+      if (deathsByPull[i].notPresent) {
+        let j = i;
+        while (j + 1 < n && deathsByPull[j + 1].notPresent) j++;
+        const x0 = clamp(bars[i].x - step / 2);
+        const x1 = clamp(bars[j].x + step / 2);
+        if (topStrip) ctx.fillRect(x0, top, x1 - x0, 5);
+        else ctx.fillRect(x0, top, x1 - x0, bottom - top);
+        i = j + 1;
+      } else i++;
+    }
+    ctx.restore();
+  }
+  const absenceBands = {
+    id: "absenceBands",
+    beforeDatasetsDraw: (chart) => drawAbsence(chart, "rgba(125,133,144,0.14)", false),
+    afterDatasetsDraw: (chart) => drawAbsence(chart, "rgba(139,148,158,0.95)", true)
+  };
+
   return new Chart(canvas, {
     type: "bar",
+    plugins: [absenceBands],
     data: { labels, datasets },
     options: {
       responsive: true,
@@ -325,7 +375,8 @@ function renderDeathsChart(canvas, deathsByPull, abilities) {
         x: {
           stacked: true,
           ticks: {
-            color: (ctx) => deathsByPull[ctx.index]?.notPresent ? "#333" : "#7d8590",
+            // Absence is shown by the grey bands now, so keep all labels even.
+            color: "#7d8590",
             font: { size: 10 },
             maxTicksLimit: 60
           },
